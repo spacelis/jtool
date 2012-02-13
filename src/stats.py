@@ -57,10 +57,13 @@ def discrete_statistics(instream, fproc, args):
         for line in instream:
             cnt += 1
             try:
-                bdatum = json.loads(line)
-                datum = fproc.process(bdatum)
-                token = json.dumps(datum)
-                logging.debug('%s => %s' % (datum, token))
+                if args.pipelines:
+                    bdatum = json.loads(line)
+                    datum = fproc.process(bdatum)
+                    token = json.dumps(datum)
+                    logging.debug('%s => %s' % (datum, token))
+                else:
+                    token = line.strip()
                 if token in stat:
                     stat[token] += 1
                 else:
@@ -72,14 +75,20 @@ def discrete_statistics(instream, fproc, args):
         for line in instream:
             cnt += 1
             try:
-                bdatum = line.strip().split(args.separator)
-                datum = fproc.process(bdatum)
-                token = args.separator.join(datum)
-                logging.debug('%s => %s' % (bdatum, token))
+                if args.pipelines:
+                    bdatum = line.strip().split(args.separator)
+                    datum = fproc.process(bdatum)
+                    token = args.separator.join(datum)
+                    logging.debug('%s => %s' % (bdatum, token))
+                else:
+                    token = line.strip()
                 if token in stat:
                     stat[token] += 1
                 else:
                     stat[token] = 1
+            except IndexError as e:
+                logging.error('[Pipeline] index out of list')
+                exit(1)
             except Exception as e:
                 logging.warn('Failed at [%s]: %s' % (cnt, str(e)))
     return stat
@@ -125,11 +134,11 @@ def main():
         fin = sys.stdin
 
     fp = FieldConverter()
-    if args.json:
+    if args.json and args.pipelines:
         for p in args.pipelines:
             field, plname = p.split(':', 1)
             fp.add_field_processer(field, Pipeline(plname.split(':')))
-    else:
+    elif args.pipelines:
         for p in args.pipelines:
             field, plname = p.split(':', 1)
             fp.add_field_processer(int(field), Pipeline(plname.split(':')))
