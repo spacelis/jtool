@@ -4,7 +4,7 @@
 Description:
     A tool for manipulating JSON file
 History:
-    0.2.3 x fix a bug of outputing jsons
+    0.2.3 x fix a bug of outputing jsons, fix a bug of outputing degug info
     0.2.2 + if no list element specified then output full json instead
     0.2.1 + feature to select json object with inner elements specified in a file
     0.2.0 + feature to ignore malformed json and gzip file
@@ -38,7 +38,7 @@ class Extractor(object):
         self.ppath = str()
         self.path = elempath
         if elempath.startswith(':'):
-            self.parse = eval('lambda x: x\'' + elem[1:] + '\'')
+            self.parse = eval('lambda x: x\'' + elempath[1:] + '\'')
             logging.debug('Transform Path: %s => %s' % (self.path, self.ppath))
             return
         for elem in elempath.split('.'):
@@ -68,32 +68,38 @@ class MatchCondition(object):
         super(MatchCondition, self).__init__()
         self.ispositive = ispositive
         if condstr.find('==') > 0:
-            self.elem, self.refval = condstr.split('==')
+            self.elem, self.refval = condstr.split('==', 1)
             # due to the parameter sequence of operator.contains
             # all mfuncstr is literally inversion of mfunc
             self.mfunc = operator.eq
-            self.mfuncstr = '='
+            self.mfuncstr = '=='
         elif condstr.find('<=') > 0:
-            self.elem, self.refval = condstr.split('<=')
-            self.mfunc = lambda x,y: x <= y
+            self.elem, self.refval = condstr.split('<=', 1)
+            self.mfunc = lambda x, y: x <= y
             self.mfuncstr = '<='
         elif condstr.find('>=') > 0:
-            self.elem, self.refval = condstr.split('>=')
-            self.mfunc = lambda x,y: x >= y
+            self.elem, self.refval = condstr.split('>=', 1)
+            self.mfunc = lambda x, y: x >= y
             self.mfuncstr = '>='
         elif condstr.find('<<') > 0:
-            self.elem, setfile = condstr.split('<<')
+            self.elem, setfile = condstr.split('<<', 1)
             self.refval = open(setfile)
-            self.mfunc = lambda x,y: x in y
+            self.mfunc = lambda x, y: x in y
             self.mfuncstr = '<<'
         else:
             self.elem = condstr
+            self.mfuncstr = 'select'
             self.refval = None
         self.pfunc = Extractor(self.elem)
 
-        self.str = 'Matching [%s]: %s%s%s' % ('+' if ispositive else '-',
-                self.elem, self.mfuncstr,
-                self.refval.name if isinstance(self.refval, file) else self.refval)
+        if self.mfuncstr != 'select':
+            if not self.refval:
+                raise ValueError('Wrong Condition String: %s' % (condstr,))
+            self.str = 'Matching [%s]: %s%s%s' % ('+' if ispositive else '-',
+                    self.elem, self.mfuncstr,
+                    self.refval.name if isinstance(self.refval, file) else self.refval)
+        else:
+            self.str = 'Selecting [%s%s]' % ('+' if ispositive else '-', self.elem)
         logging.debug(self.str)
 
 
@@ -156,12 +162,12 @@ def printelems(jobj, showlist):
             output.append((elem.path, unicode(_ARGS.nullstr)))
 
     if _ARGS.oneline:
-        print >> _ARGS.fout, (_ARGS.separator.join([v for k,v in output]).replace('\n','') + _ARGS.delimiter).\
+        print >> _ARGS.fout, (_ARGS.separator.join([v for k, v in output]).replace('\n','') + _ARGS.delimiter).\
             encode('utf-8', errors='ignore'),
     elif _ARGS.json:
         print >> _ARGS.fout, (json.dumps(dict(output))) + _ARGS.delimiter,
     else:
-        print >> _ARGS.fout, (_ARGS.separator.join([v for k,v in output]) + _ARGS.delimiter).\
+        print >> _ARGS.fout, (_ARGS.separator.join([v for k, v in output]) + _ARGS.delimiter).\
             encode('utf-8', errors='ignore'),
 
 def parse_parameter():
@@ -240,7 +246,7 @@ def main():
     """
     global _ARGS
     parse_parameter()
-    logging.basicConfig(format='%(message)s', level=logging.INFO)
+    logging.basicConfig(format='%(message)s', level=logging.DEBUG)
 
     conds = list()
     if _ARGS.include:
