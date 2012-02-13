@@ -4,6 +4,7 @@
 Description:
     A tool for manipulating JSON file
 History:
+    0.2.2 + if no list element specified then output full json instead
     0.2.1 + feature to select json object with inner elements specified in a file
     0.2.0 + feature to ignore malformed json and gzip file
     0.1.1 + output whole json objects and '<=' for condition
@@ -40,8 +41,8 @@ def formatpath(elempath):
 
 class MatchCondition(object):
     """ A Conditioning object for selecting JSONs
-        The constructor will take a string defining the condition and 
-        also a boolean indicating whether it is a match when a JSON 
+        The constructor will take a string defining the condition and
+        also a boolean indicating whether it is a match when a JSON
         fulfill the condition.
         A condition string contains 2 or 3 parts:
         ELEMPATH [OPER REFVAL]
@@ -62,21 +63,26 @@ class MatchCondition(object):
             self.mfuncstr = '='
         elif condstr.find('<=') > 0:
             self.elem, self.refval = condstr.split('<=')
-            self.mfunc = operator.ge
+            self.mfunc = lambda x,y: x <= y
             self.mfuncstr = '<='
         elif condstr.find('>=') > 0:
             self.elem, self.refval = condstr.split('>=')
-            self.mfunc = operator.le
+            self.mfunc = lambda x,y: x >= y
             self.mfuncstr = '>='
         elif condstr.find('<<') > 0:
             self.elem, setfile = condstr.split('<<')
             self.refval = open(setfile)
-            self.mfunc = operator.contains
+            self.mfunc = lambda x,y: x in y
             self.mfuncstr = '<<'
         else:
             self.elem = condstr
             self.refval = None
         self.pfunc = eval('lambda x: x' + formatpath(self.elem))
+        if isinstance(self.refval, file):
+            logging.debug(self.elem + self.mfuncstr + self.refval.name)
+        else:
+            logging.debug(self.elem + self.mfuncstr + self.refval)
+
 
 
     def match(self, jobj):
@@ -86,12 +92,17 @@ class MatchCondition(object):
             val = self.pfunc(jobj)
         except Exception:
             val = None
-        if isinstance(self.refval, file):
-            self.refval = set([type(val)(v) for v in self.refval])
+
         if self.refval and val:
-            if type(self.refval) != type(val):
+            if isinstance(self.refval, file):
+                self.refval = set([type(val)(v) for v in self.refval])
+            elif isinstance(self.refval, set):
+                pass
+            elif type(self.refval) != type(val):
                 self.refval = type(val)(self.refval)
-            matched = self.mfunc(self.refval, val)
+            matched = self.mfunc(val, self.refval)
+            logging.debug(str(val) + self.mfuncstr + str(self.refval)
+                    + " [included]" if self.ispositive == matched else "")
             return self.ispositive == matched
         else:
             if val:
@@ -120,7 +131,7 @@ def printelems(jobj, showlist):
 
 
     # output the whole json object and this will override any -l options.
-    if _ARGS.whole:
+    if _ARGS.whole or len(showlist)==0:
         print >> _ARGS.fout, json.dumps(jobj).encode('utf-8', errors='ignore')
         return
 
@@ -168,7 +179,7 @@ def parse_parameter():
             'specified in a file')
     parser.add_argument('-x', '--exclude', dest='exclude', action='append', metavar='COND',
             help='Only list JSON that doesn\'t has EXCLUDE as a member, or/and '
-            'the member {==|>=|<=} a given value. E.g. -e user.id==123')
+            'the member {==|>=|<=|<<} a given value. E.g. -e user.id==123')
     parser.add_argument('-D', '--delimiter', dest='delimiter', action='store',
             default='\n', help='The object delimiter used in output format.')
     parser.add_argument('-S', '--separator', dest='separator', action='store',
@@ -217,14 +228,14 @@ def json_check():
         try:
             obj = json.loads(line)
         except ValueError as ve:
-            logging.warn(ve)
-            logging.warn('At %s[%d], %s' % (_ARGS.fin.get_current(), cnt, line.strip()))
+            logging.warn(ve + '\nAt %s[%d], %s' % (_ARGS.fin.get_current(), cnt, line.strip()))
 
 def main():
     """ Main function of this tool which deals with parameter mapping.
     """
     global _ARGS
     parse_parameter()
+    logging.basicConfig(format='%(message)s', level=logging.INFO)
 
     conds = list()
     if _ARGS.include:
@@ -257,8 +268,7 @@ def main():
             except GotoNextLineException:
                 pass
             except ValueError as ve:
-                logging.warn(ve)
-                logging.warn('At %s[%d], %s' % (_ARGS.fin.get_current(), cnt, line.strip()))
+                logging.warn(ve + '\nAt %s[%d], %s' % (_ARGS.fin.get_current(), cnt, line.strip()))
     else:
         json_check()
 
