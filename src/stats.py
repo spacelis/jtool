@@ -4,6 +4,7 @@
 Description:
     Get statistics from input.
 History:
+    0.2.0 + Ability of converting a field of an item before statistics
     0.1.1 + Sorting option for outputs.
     0.1.0 The first version.
 """
@@ -12,60 +13,76 @@ __author__ = 'SpaceLis'
 
 import argparse
 import re
-import fileinput
 import sys
 import logging
-from datetime import datetime
+import json
+from fileset import FileInputSet
+from labeler import Pipeline
 
 _SPACES = re.compile(r'\s+')
-__M__ = sys.modules[__name__]
+__M__ = sys.modules['labeler']
 
 def SpaceTokenizer():
     return _SPACES.split
 
-#TODO integrate this class into parameters
-class BinLabelerFactory(object):
-    """ Use a set of numbers to form a serious bin bounded by numbers.
-        E.g. bins = [1, 2, 3, 4], label= = ['<1', '1..2', '2..3', '3..4', '>4']
-        The len(labels) should be one more then len(bins). The order is attained
-        for dispatching, be sure they are in chronical order.
+class FieldConverter(object):
+    """ Preprocess the field data before doing statistics
     """
-    def __init__(self, bins, labels, converter=lambda x: x):
-        super(BinLabelerFactory, self).__init__()
-        if not len(labels) == len(bins) + 1:
-            raise ValueError('The len(labels) doesn\'t equals to len(bins)+1')
-        self._bins = bins
-        self._labels = labels
-        self._converter = converter
+    def __init__(self):
+        super(FieldConverter, self).__init__()
+        self.processer = dict()
 
-    def __call__(self, item):
-        """ return the label for the token
+    def add_field_processer(self, field, pipeline):
+        """ Add a new process to a field
         """
-        item = self._converter(item)
-        if item <= self._bins[0]:
-            return self._labels[0]
-        for label, floor in zip(self._labels[1:], self._bins):
-            if item <= floor:
-                return label
+        self.processer[field] = pipeline
 
-def twittertime(timestr):
-    """ Convert string format of timestamp in tweets to datetime objects
+    def process(self, datum):
+        """ Process a line of data
+        """
+        logging.debug('Processing data')
+        for f in self.processer.iterkeys():
+            logging.debug('Processing [%s]' % (f,))
+            datum[f] = self.processer[f](datum[f])
+        return datum
+
+
+def discrete_statistics(instream, fproc, args):
+    """ Do statistics on a searious dicrete tokens
     """
-    return datetime.strptime(timestr[4:], '%b %d %H:%M:%S +0000 %Y')
+    stat = dict()
 
-def TimeLabelerFactory(fmt, converter=lambda x: x):
-    """ Return a labeler according to time format
-    """
-    return lambda x: converter(x).strftime(fmt)
+    cnt = 0
+    if args.json:
+        for line in instream:
+            cnt += 1
+            try:
+                bdatum = json.loads(line)
+                datum = fproc.process(bdatum)
+                token = json.dumps(datum)
+                logging.debug('%s => %s' % (datum, token))
+                if token in stat:
+                    stat[token] += 1
+                else:
+                    stat[token] = 1
+            except Exception as e:
+                logging.warn('Failed at [%s]: %s' % (cnt, str(e)))
 
-WeekLabeler = TimeLabelerFactory('%Y-%U', twittertime)
-PWeekLabeler = TimeLabelerFactory('%A', twittertime)
-DayLabeler = TimeLabelerFactory('%Y-%m-%d', twittertime)
-PYearLabeler = TimeLabelerFactory('%j', twittertime)
-MonthLabeler = TimeLabelerFactory('%Y-%m', twittertime)
-PMonthLabeler = TimeLabelerFactory('%d', twittertime)
-PYearMonthLabeler = TimeLabelerFactory('%m', twittertime)
-
+    else:
+        for line in instream:
+            cnt += 1
+            try:
+                bdatum = line.strip().split(args.separator)
+                datum = fproc.process(bdatum)
+                token = args.separator.join(datum)
+                logging.debug('%s => %s' % (bdatum, token))
+                if token in stat:
+                    stat[token] += 1
+                else:
+                    stat[token] = 1
+            except Exception as e:
+                logging.warn('Failed at [%s]: %s' % (cnt, str(e)))
+    return stat
 
 def parse_parameter():
     """ Parse parameters from console
@@ -78,92 +95,46 @@ def parse_parameter():
     parser.add_argument('-t', '--tokenizer', action='store', dest='tokenizer',
             help='Tokenize the input line before doing statistics, useful for '
             'text.')
-    parser.add_argument('-p', '--pipeline', action='append', dest='pipeline',
+    parser.add_argument('-p', '--pipeline', action='append', dest='pipelines',
             metavar='labeler',
             help='Tokenize the input line before doing statistics, useful for '
             'text.')
-    parser.add_argument('-d', '--delimiter', action='store', default=' ', dest='delimiter',
-            help='The delimiter used in output file to separate the token and '
-            'frequency.')
-    parser.add_argument('-s', '--sort-freq', action='store_true', default=False, dest='sortf',
+    parser.add_argument('-s', '--separator', action='store', dest='separator',
+            default='\t', help='The separator of input data')
+    parser.add_argument('-j', '--json', action='store_true', default=False, dest='json',
+            help='Use json format as input')
+    parser.add_argument('-f', '--sort-freq', action='store_true', default=False, dest='sortf',
             help='Output the statistics with sorting on frequency.')
-    parser.add_argument('-S', '--sort-key', action='store_true', default=False, dest='sortk',
+    parser.add_argument('-k', '--sort-key', action='store_true', default=False, dest='sortk',
             help='Output the statistics with sorting on key.')
     parser.add_argument('sources', metavar='file', nargs='*',
             help='Files as inputs. STDIN will be used, if no input file specified.')
     return parser.parse_args()
 
-
-
-class Pipeline(object):
-    """ A labelers pipeline for processing labels
-    """
-    def __init__(self, lbnames):
-        super(Pipeline, self).__init__()
-        self._lbnames = lbnames
-        self._lbpipeline = list()
-        for lbname in lbnames:
-            if lbname.endswith('Labeler'):
-                self._lbpipeline.append(getattr(__M__, lbname))
-
-    def __call__(self, item):
-        """ Run the item through the pipeline.
-        """
-        for lb in self._lbpipeline:
-            item = lb(item)
-        return item
-
-
-
-def discrete_statistics(instream, args):
-    """ Do statistics on a searious dicrete tokens
-    """
-    stat = dict()
-
-    if args.pipeline:
-        pipeline = Pipeline(args.pipeline)
-    else:
-        pipeline = lambda x: x
-
-    if args.tokenizer:
-        try:
-            tokenizer = getattr(__M__, args.tokenizer)
-            for line in instream:
-                tokens = tokenizer(line)
-                for token in tokens[0:-1]:
-                    lb = pipeline(token)
-                    if lb in stat:
-                        stat[lb] += 1
-                    else:
-                        stat[lb] = 1
-        except AttributeError:
-            logging.error('Tokenizer %s not found.' % (args.tokenizer,))
-            exit(1)
-    else:
-        for line in instream:
-            try:
-                lb = pipeline(line.strip())
-                if lb in stat:
-                    stat[lb] += 1
-                else:
-                    stat[lb] = 1
-            except Exception:
-                pass
-    return stat
-
 def main():
     """ main()
     """
     args = parse_parameter()
+    logging.basicConfig(format='%(message)s', level=logging.INFO)
+    logging.debug(args)
 
 	# Determine the input of JSON streams
     if len(args.sources) > 0:
-        fin = fileinput.input(args.sources, openhook = fileinput.hook_compressed)
+        fin = FileInputSet(args.sources)
     else:
         fin = sys.stdin
 
+    fp = FieldConverter()
+    if args.json:
+        for p in args.pipelines:
+            field, plname = p.split(':', 1)
+            fp.add_field_processer(field, Pipeline(plname.split(':')))
+    else:
+        for p in args.pipelines:
+            field, plname = p.split(':', 1)
+            fp.add_field_processer(int(field), Pipeline(plname.split(':')))
     # Do statistics
-    stat = discrete_statistics(fin, args)
+    stat = discrete_statistics(fin, fp, args)
 
     # Sort results
     if args.sortf:
@@ -178,15 +149,8 @@ def main():
         stat = [(k, v) for k, v in stat.iteritems()]
 
     # Print results
-    if args.delimiter:
-        for key, val in stat:
-            print >> sys.stdout, key + args.delimiter + str(val)
-
-def test():
-    """docstring for test
-    """
-    print PWeekLabeler('Wed Feb 01 13:22:07 +0000 2012')
-
+    for key, val in stat:
+        print >> sys.stdout, key + '\t' + str(val)
 
 if __name__ == '__main__':
     main()
