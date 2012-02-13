@@ -4,6 +4,7 @@
 Description:
     A tool for manipulating JSON file
 History:
+    0.2.1 + feature to select json object with inner elements specified in a file
     0.2.0 + feature to ignore malformed json and gzip file
     0.1.1 + output whole json objects and '<=' for condition
     0.1.0 The first version.
@@ -23,6 +24,10 @@ _ARGS = None
 
 def formatpath(elempath):
     """ Format path for lambda
+        In a path, child element is connected to its parent element with '.'.
+        If a child element is in a list, then it should be named as '@' + its
+        position. Finally this function gives a python representation for the
+        path and will be further used as a part of lambda expression.
     """
     path = str()
     for elem in elempath.split('.'):
@@ -34,28 +39,43 @@ def formatpath(elempath):
     return path
 
 class MatchCondition(object):
-    """ A rule for matching JSON objects
+    """ A Conditioning object for selecting JSONs
+        The constructor will take a string defining the condition and 
+        also a boolean indicating whether it is a match when a JSON 
+        fulfill the condition.
+        A condition string contains 2 or 3 parts:
+        ELEMPATH [OPER REFVAL]
+        ELEMPATH is a path for accessing a specific element in a JSON.
+        OPER is a operator including ==, >=, <=, <<, which means equality,
+            greater than (inclusive), less then (inclusive), and contained in.
+        REFVAL is the reference value for comparison. The CONTAINED_IN operator
+            uses REFVAL to indicate the file holding the set of reference values.
     """
     def __init__(self, condstr, ispositive):
         super(MatchCondition, self).__init__()
         self.ispositive = ispositive
         if condstr.find('==') > 0:
-            self.elem, self.val = condstr.split('==')
+            self.elem, self.refval = condstr.split('==')
+            # due to the parameter sequence of operator.contains
+            # all mfuncstr is literally inversion of mfunc
             self.mfunc = operator.eq
             self.mfuncstr = '='
         elif condstr.find('<=') > 0:
-            self.elem, self.val = condstr.split('<=')
-            self.mfunc = operator.le
+            self.elem, self.refval = condstr.split('<=')
+            self.mfunc = operator.ge
             self.mfuncstr = '<='
         elif condstr.find('>=') > 0:
-            self.elem, self.val = condstr.split('>=')
-            self.mfunc = operator.ge
+            self.elem, self.refval = condstr.split('>=')
+            self.mfunc = operator.le
             self.mfuncstr = '>='
         elif condstr.find('<<') > 0:
-# TODO
+            self.elem, setfile = condstr.split('<<')
+            self.refval = open(setfile)
+            self.mfunc = operator.contains
+            self.mfuncstr = '<<'
         else:
             self.elem = condstr
-            self.val = None
+            self.refval = None
         self.pfunc = eval('lambda x: x' + formatpath(self.elem))
 
 
@@ -66,10 +86,12 @@ class MatchCondition(object):
             val = self.pfunc(jobj)
         except Exception:
             val = None
-        if self.val and val:
-            if type(self.val) != type(val):
-                self.val = type(val)(self.val)
-            matched = self.mfunc(val, self.val)
+        if isinstance(self.refval, file):
+            self.refval = set([type(val)(v) for v in self.refval])
+        if self.refval and val:
+            if type(self.refval) != type(val):
+                self.refval = type(val)(self.refval)
+            matched = self.mfunc(self.refval, val)
             return self.ispositive == matched
         else:
             if val:
@@ -85,13 +107,13 @@ class MatchCondition(object):
 
 
 class GotoNextLineException(BaseException):
-    """ Cancel current iteration
+    """ Drop current line and try the next line instead.
     """
     def __init__(self):
         super(GotoNextLineException, self).__init__()
 
 def printelems(jobj, showlist):
-    """ Print out the elements specified in elems
+    """ Print out the elements specified by the paramenter -l
     """
     global _ARGS
     output = list()
@@ -184,6 +206,8 @@ def parse_parameter():
         _ARGS.fout = sys.stdout
 
 def json_check():
+    """ Check the integrity of the JSONs in the files
+    """
     global _ARGS
     cnt = 0
     for line in _ARGS.fin:
@@ -197,7 +221,7 @@ def json_check():
             logging.warn('At %s[%d], %s' % (_ARGS.fin.get_current(), cnt, line.strip()))
 
 def main():
-    """ main()
+    """ Main function of this tool which deals with parameter mapping.
     """
     global _ARGS
     parse_parameter()
