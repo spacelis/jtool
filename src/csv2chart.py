@@ -1,4 +1,4 @@
-#!python
+#!/home/wenli/devel/python/bin/python
 # -*- coding: utf-8 -*-
 """File: csv2chart.py
 Description:
@@ -137,8 +137,8 @@ def main():
             default='', metavar='STRING', help='The label for y axis.')
     parser.add_argument('-P', '--without-legend', dest='legend', action='store_false',
             default=True, help='Do not show a legend.')
-    parser.add_argument('-d', '--delimiter', dest='delimiter', action='store',
-            default='\t', help='The delimiter for CSV')
+    parser.add_argument('-d', '--dilimiter', dest='dilimiter', action='store',
+            default='\t', help='The dilimiter for CSV')
     parser.add_argument('-q', '--quotechar', dest='quotechar', action='store',
             default='"', help='The quotechar for CSV')
     parser.add_argument('-s', '--size', dest='size', action='store',
@@ -155,7 +155,7 @@ def main():
     else:
         fin = sys.stdin
 
-    reader = csv.reader(fin, delimiter=_ARGS.delimiter, quotechar=_ARGS.quotechar)
+    reader = csv.reader(fin, delimiter=_ARGS.dilimiter, quotechar=_ARGS.quotechar)
     if _ARGS.loglog:
         drawer = LogLogDrawer(Color(_ARGS.colorset))
     else:
