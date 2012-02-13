@@ -162,13 +162,13 @@ def printelems(jobj, showlist):
             output.append((elem.path, unicode(_ARGS.nullstr)))
 
     if _ARGS.oneline:
-        print >> _ARGS.fout, (_ARGS.separator.join([v for k, v in output]).replace('\n','') + _ARGS.delimiter).\
-            encode('utf-8', errors='ignore'),
+        print >> _ARGS.fout, (_ARGS.delimiter.join([v for k, v in output]).replace('\n','')).\
+            encode('utf-8', errors='ignore')
     elif _ARGS.json:
-        print >> _ARGS.fout, (json.dumps(dict(output))) + _ARGS.delimiter,
+        print >> _ARGS.fout, (json.dumps(dict(output)))
     else:
-        print >> _ARGS.fout, (_ARGS.separator.join([v for k, v in output]) + _ARGS.delimiter).\
-            encode('utf-8', errors='ignore'),
+        print >> _ARGS.fout, (_ARGS.delimiter.join([v for k, v in output])).\
+            encode('utf-8', errors='ignore')
 
 def parse_parameter():
     """ Parse the argument
@@ -191,11 +191,8 @@ def parse_parameter():
     parser.add_argument('-x', '--exclude', dest='exclude', action='append', metavar='COND',
             help='Only list JSON that doesn\'t has EXCLUDE as a member, or/and '
             'the member {==|>=|<=|<<} a given value. E.g. -e user.id==123')
-    parser.add_argument('-D', '--delimiter', dest='delimiter', action='store',
-            default='\n', help='The object delimiter used in output format.')
-    parser.add_argument('-S', '--separator', dest='separator', action='store',
-            default='\t', help='The separator used between members in output '
-            'format.')
+    parser.add_argument('-d', '--delimiter', dest='delimiter', action='store',
+            default='\t', help='The object delimiter used in output format.')
     parser.add_argument('-N', '--nullstr', dest='nullstr', action='store',
             default='NULL', help='The NULL string used when the member is null '
             'or not found.')
@@ -204,7 +201,7 @@ def parse_parameter():
             '.gz')
     parser.add_argument('-J', '--json', dest='json', action='store_true',
             default=False, help='Output each element in json format.')
-    parser.add_argument('-n', '--num', dest='num', action='store',
+    parser.add_argument('-n', '--num', dest='num', action='store', type=int,
             default=-1, help='Output only the first NUM JSON objects.')
     parser.add_argument('-c', '--check', dest='check', action='store_true',
             default=False, help='Check the integrity of JSON collection with errors '
@@ -246,7 +243,8 @@ def main():
     """
     global _ARGS
     parse_parameter()
-    logging.basicConfig(format='%(message)s', level=logging.DEBUG)
+    logging.basicConfig(format='%(message)s', level=logging.WARNING)
+    logging.debug(_ARGS)
 
     conds = list()
     if _ARGS.include:
