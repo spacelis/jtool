@@ -4,6 +4,7 @@
 Description:
     A tool for manipulating JSON file
 History:
+    0.2.3 x fix a bug of outputing jsons
     0.2.2 + if no list element specified then output full json instead
     0.2.1 + feature to select json object with inner elements specified in a file
     0.2.0 + feature to ignore malformed json and gzip file
@@ -23,21 +24,32 @@ from fileset import FileInputSet
 
 _ARGS = None
 
-def formatpath(elempath):
-    """ Format path for lambda
-        In a path, child element is connected to its parent element with '.'.
-        If a child element is in a list, then it should be named as '@' + its
-        position. Finally this function gives a python representation for the
-        path and will be further used as a part of lambda expression.
+class Extractor(object):
+    """ Extract an element from an object by a path
     """
-    path = str()
-    for elem in elempath.split('.'):
-        if elem.startswith('@'):
-            elem = elem[1:]
-        else:
-            elem = '\'' + elem + '\''
-        path += '[' + elem + ']'
-    return path
+    def __init__(self, elempath):
+        """ Format path for lambda
+            In a path, child element is connected to its parent element with '.'.
+            If a child element is in a list, then it should be named as '@' + its
+            position. Finally this function gives a python representation for the
+            path and will be further used as a part of lambda expression.
+        """
+        super(Extractor, self).__init__()
+        self.ppath = str()
+        self.path = elempath
+        if elempath.startswith(':'):
+            self.parse = eval('lambda x: x\'' + elem[1:] + '\'')
+            logging.debug('Transform Path: %s => %s' % (self.path, self.ppath))
+            return
+        for elem in elempath.split('.'):
+            if elem.startswith('@'):
+                elem = elem[1:]
+            else:
+                elem = '\'' + elem + '\''
+            self.ppath += '[' + elem + ']'
+        logging.debug('Transform Path: %s => %s' % (self.path, self.ppath))
+        self.parse = eval('lambda x: x' + self.ppath)
+
 
 class MatchCondition(object):
     """ A Conditioning object for selecting JSONs
@@ -77,11 +89,12 @@ class MatchCondition(object):
         else:
             self.elem = condstr
             self.refval = None
-        self.pfunc = eval('lambda x: x' + formatpath(self.elem))
-        if isinstance(self.refval, file):
-            logging.debug(self.elem + self.mfuncstr + self.refval.name)
-        else:
-            logging.debug(self.elem + self.mfuncstr + self.refval)
+        self.pfunc = Extractor(self.elem)
+
+        self.str = 'Matching [%s]: %s%s%s' % ('+' if ispositive else '-',
+                self.elem, self.mfuncstr,
+                self.refval.name if isinstance(self.refval, file) else self.refval)
+        logging.debug(self.str)
 
 
 
@@ -89,7 +102,7 @@ class MatchCondition(object):
         """ to see weather the JSON object match the rule
         """
         try:
-            val = self.pfunc(jobj)
+            val = self.pfunc.parse(jobj)
         except Exception:
             val = None
 
@@ -101,8 +114,7 @@ class MatchCondition(object):
             elif type(self.refval) != type(val):
                 self.refval = type(val)(self.refval)
             matched = self.mfunc(val, self.refval)
-            logging.debug(str(val) + self.mfuncstr + str(self.refval)
-                    + " [included]" if self.ispositive == matched else "")
+            logging.debug('Condition [%s]: %s' % (self.str, str(val)))
             return self.ispositive == matched
         else:
             if val:
@@ -136,27 +148,20 @@ def printelems(jobj, showlist):
         return
 
     # output the json elements specified by -l options
-    if _ARGS.json:
-        for elem in showlist:
-            try:
-                obj = elem(jobj)
-                output.append(unicode(json.dumps(obj)))
-            except:
-                output.append(unicode(_ARGS.nullstr))
-
-    else:
-        for elem in showlist:
-            try:
-                obj = elem(jobj)
-                output.append(unicode(obj))
-            except:
-                output.append(unicode(_ARGS.nullstr))
+    for elem in showlist:
+        try:
+            obj = elem.parse(jobj)
+            output.append((elem.path, unicode(obj)))
+        except:
+            output.append((elem.path, unicode(_ARGS.nullstr)))
 
     if _ARGS.oneline:
-        print >> _ARGS.fout, (_ARGS.separator.join(output).replace('\n','') + _ARGS.delimiter).\
+        print >> _ARGS.fout, (_ARGS.separator.join([v for k,v in output]).replace('\n','') + _ARGS.delimiter).\
             encode('utf-8', errors='ignore'),
+    elif _ARGS.json:
+        print >> _ARGS.fout, (json.dumps(dict(output))) + _ARGS.delimiter,
     else:
-        print >> _ARGS.fout, (_ARGS.separator.join(output) + _ARGS.delimiter).\
+        print >> _ARGS.fout, (_ARGS.separator.join([v for k,v in output]) + _ARGS.delimiter).\
             encode('utf-8', errors='ignore'),
 
 def parse_parameter():
@@ -248,10 +253,7 @@ def main():
     showlist = list()
     if _ARGS.show:
         for elem in _ARGS.show:
-            if elem.startswith(':'):
-                showlist.append(eval('lambda x: \'' + elem[1:] + '\''))
-            else:
-                showlist.append(eval('lambda x: x' + formatpath(elem)))
+            showlist.append(Extractor(elem))
 
     if not _ARGS.check:
         cnt = 0
