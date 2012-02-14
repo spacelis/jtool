@@ -4,6 +4,7 @@
 Description:
     A tool for manipulating JSON file
 History:
+    0.2.4 + processing CSV format as input
     0.2.3 x fix a bug of outputing jsons, fix a bug of outputing degug info
     0.2.2 + if no list element specified then output full json instead
     0.2.1 + feature to select json object with inner elements specified in a file
@@ -150,7 +151,10 @@ def printelems(jobj, showlist):
 
     # output the whole json object and this will override any -l options.
     if _ARGS.whole or len(showlist)==0:
-        print >> _ARGS.fout, json.dumps(jobj).encode('utf-8', errors='ignore')
+        if _ARGS.csv:
+            print >> _ARGS.fout, _ARGS.delimiter.join(jobj).encode('utf-8', errors='ignore')
+        else:
+            print >> _ARGS.fout, json.dumps(jobj).encode('utf-8', errors='ignore')
         return
 
     # output the json elements specified by -l options
@@ -165,7 +169,7 @@ def printelems(jobj, showlist):
         print >> _ARGS.fout, (_ARGS.delimiter.join([v for k, v in output]).replace('\n','')).\
             encode('utf-8', errors='ignore')
     elif _ARGS.json:
-        print >> _ARGS.fout, (json.dumps(dict(output)))
+        print >> _ARGS.fout, (json.dumps(dict(output)).encode('utf-8', errors='ignore'))
     else:
         print >> _ARGS.fout, (_ARGS.delimiter.join([v for k, v in output])).\
             encode('utf-8', errors='ignore')
@@ -192,13 +196,12 @@ def parse_parameter():
             help='Only list JSON that doesn\'t has EXCLUDE as a member, or/and '
             'the member {==|>=|<=|<<} a given value. E.g. -e user.id==123')
     parser.add_argument('-d', '--delimiter', dest='delimiter', action='store',
-            default='\t', help='The object delimiter used in output format.')
+            default='\t', help='The object delimiter used in csv format.')
     parser.add_argument('-N', '--nullstr', dest='nullstr', action='store',
             default='NULL', help='The NULL string used when the member is null '
             'or not found.')
     parser.add_argument('-o', '--output', dest='output', action='store', metavar='file',
-            default=None, help='The output file, gzipped if the name ends with '
-            '.gz')
+            default=None, help='The output file, gzipped if the name ends with .gz')
     parser.add_argument('-J', '--json', dest='json', action='store_true',
             default=False, help='Output each element in json format.')
     parser.add_argument('-n', '--num', dest='num', action='store', type=int,
@@ -206,6 +209,8 @@ def parse_parameter():
     parser.add_argument('-c', '--check', dest='check', action='store_true',
             default=False, help='Check the integrity of JSON collection with errors '
             'to stderr')
+    parser.add_argument('-C', '--csv', dest='csv', action='store_true', default=False,
+            help='Use CSV file as input')
     parser.add_argument('-1', '--oneline', dest='oneline', action='store_true',
             default=False, help='Force each item of outputs in one line.')
     parser.add_argument('sources', metavar='file', nargs='*',
@@ -261,20 +266,36 @@ def main():
 
     if not _ARGS.check:
         cnt = 0
-        for line in _ARGS.fin:
-            cnt += 1
-            if _ARGS.num >= 0 and cnt > _ARGS.num:
-                break
-            try:
-                obj = json.loads(line)
-                for cond in conds:
-                    if not cond.match(obj):
-                        raise GotoNextLineException
-                printelems(obj, showlist)
-            except GotoNextLineException:
-                pass
-            except ValueError as ve:
-                logging.warn(ve + '\nAt %s[%d], %s' % (_ARGS.fin.get_current(), cnt, line.strip()))
+        if not _ARGS.csv:
+            for line in _ARGS.fin:
+                cnt += 1
+                if _ARGS.num >= 0 and cnt > _ARGS.num:
+                    break
+                try:
+                    obj = json.loads(line)
+                    for cond in conds:
+                        if not cond.match(obj):
+                            raise GotoNextLineException
+                    printelems(obj, showlist)
+                except GotoNextLineException:
+                    pass
+                except ValueError as ve:
+                    logging.warn(ve + '\nAt %s[%d], %s' % (_ARGS.fin.get_current(), cnt, line.strip()))
+        else:
+            for line in _ARGS.fin:
+                cnt += 1
+                if _ARGS.num >= 0 and cnt > _ARGS.num:
+                    break
+                try:
+                    obj = line.strip().split(_ARGS.delimiter)
+                    for cond in conds:
+                        if not cond.match(obj):
+                            raise GotoNextLineException
+                    printelems(obj, showlist)
+                except GotoNextLineException:
+                    pass
+                except ValueError as ve:
+                    logging.warn(ve + '\nAt %s[%d], %s' % (_ARGS.fin.get_current(), cnt, line.strip()))
     else:
         json_check()
 
