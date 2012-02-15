@@ -16,9 +16,7 @@ import argparse
 import fileinput
 import textwrap
 
-_COLORSET = ['r-*', 'g-+', 'b-x', 'c-^', 'm-o']
-
-_ARGS = None
+_COLORSET = ['r-*', 'b-+', 'g-x', 'c-^', 'm-o']
 
 class Color(object):
     """ Define colors
@@ -26,6 +24,7 @@ class Color(object):
     def __init__(self, colorset=None):
         super(Color, self).__init__()
         if colorset:
+            #TODO seems not to work
             self.colorset = colorset
         else:
             self.colorset = _COLORSET
@@ -73,21 +72,20 @@ class LogLogDrawer(object):
             for i, vec in enumerate(data):
                 plt.loglog(xvec, vec, self.color.next())
 
-def drawfigure(data, label, headers, drawer):
+def drawfigure(data, label, headers, drawer, **kargs):
     """ Draw the figure by drawer
     """
-    global _ARGS
-    if _ARGS.discrete:
+    if kargs['discrete']:
         xvec = range(len(headers))
     else:
         xvec = [float(x) for x in headers]
     drawer.draw(data, label, xvec)
-    plt.xlabel(_ARGS.xlabel)
-    plt.ylabel(_ARGS.ylabel)
-    plt.title(_ARGS.title)
-    if _ARGS.xticks:
+    plt.xlabel(kargs['xlabel'])
+    plt.ylabel(kargs['ylabel'])
+    plt.title(kargs['title'])
+    if kargs['xticks']:
         plt.xticks(xvec, headers)
-    if _ARGS.legend and len(label)>0:
+    if kargs['legend'] and len(label)>0:
         plt.legend()
     plt.show()
 
@@ -98,10 +96,9 @@ def transpose(data, label, headers):
             _data[i].append(vec[i])
     return _data, headers, label
 
-def main():
-    """ main()
+def parse_args():
+    """ Parse arguments from commandline
     """
-    global _ARGS
     parser = argparse.ArgumentParser(
             formatter_class=argparse.RawDescriptionHelpFormatter,
             description= textwrap.dedent('''\
@@ -131,10 +128,10 @@ def main():
             default=False, help='Tick each point with headers in CSV.')
     parser.add_argument('-x', '--x-label', dest='xlabel', action='store',
             default='', metavar='STRING', help='The label for x axis.')
-    parser.add_argument('-t', '--title', dest='title', action='store',
-            default='', metavar='STRING', help='The title for the figure.')
     parser.add_argument('-y', '--y-label', dest='ylabel', action='store',
             default='', metavar='STRING', help='The label for y axis.')
+    parser.add_argument('-t', '--title', dest='title', action='store',
+            default='', metavar='STRING', help='The title for the figure.')
     parser.add_argument('-P', '--without-legend', dest='legend', action='store_false',
             default=True, help='Do not show a legend.')
     parser.add_argument('-d', '--dilimiter', dest='dilimiter', action='store',
@@ -149,39 +146,52 @@ def main():
             default=False, help='Use Log scale on both x and y axex in figure.')
     parser.add_argument('sources', metavar='file', nargs='+',
             help='The file contains the data. STDIN will be used if none is given.')
-    _ARGS = parser.parse_args()
-    if len(_ARGS.sources) > 0:
-        fin = fileinput.input(_ARGS.sources, openhook=fileinput.hook_compressed)
+    return parser.parse_args()
+
+def main():
+    """ main()
+    """
+    args = parse_args()
+
+    # Configure input
+    if len(args.sources) > 0:
+        fin = fileinput.input(args.sources, openhook=fileinput.hook_compressed)
     else:
         fin = sys.stdin
 
-    reader = csv.reader(fin, delimiter=_ARGS.dilimiter, quotechar=_ARGS.quotechar)
-    if _ARGS.loglog:
-        drawer = LogLogDrawer(Color(_ARGS.colorset))
-    else:
-        drawer = LineDrawer(Color(_ARGS.colorset))
+    # Read data
     label = list()
     headers = list()
     data = list()
+    reader = csv.reader(fin, delimiter=args.dilimiter, quotechar=args.quotechar)
     for row in reader:
-        if _ARGS.hasheader:
-            if _ARGS.haslabel:
+        if args.hasheader:
+            if args.haslabel:
                 headers = row[1:]
             else:
                 headers = row
-            _ARGS.hasheader = False
+            args.hasheader = False
             continue
-        if _ARGS.haslabel:
+        if args.haslabel:
             label.append(row[0])
             data.append([float(num) for num in row[1:]])
         else:
             data.append([float(num) for num in row])
-    if _ARGS.transposed:
+    if args.transposed:
         data, label, headers = transpose(data, label, headers)
     print 'Data:', len(data), 'rows', ',', len(data[0]), 'columns'
 
-    plt.figure(figsize=[float(s) for s in _ARGS.size.split('x')])
-    drawfigure(data, label, headers, drawer)
+    # Prepare for drawing
+    if args.loglog:
+        drawer = LogLogDrawer(Color(args.colorset))
+    else:
+        drawer = LineDrawer(Color(args.colorset))
+    plt.figure(figsize=[float(s) for s in args.size.split('x')])
+
+    # Draw
+    drawfigure(data, label, headers, drawer,
+            xlabel=args.xlabel, ylabel=args.ylabel, title=args.title,
+            xticks=args.xticks, legend=args.legend, discrete=args.discrete)
 
 if __name__ == '__main__':
     main()
