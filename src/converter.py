@@ -66,6 +66,7 @@ TT2PYearConverter = TwitterTimeConverterFactory('%j', twittertime)
 TT2MonthConverter = TwitterTimeConverterFactory('%Y-%m', twittertime)
 TT2PMonthConverter = TwitterTimeConverterFactory('%d', twittertime)
 TT2PYearMonthConverter = TwitterTimeConverterFactory('%m', twittertime)
+TT2SQLConverter = TwitterTimeConverterFactory('%Y-%m-%d %H:%M:%S', twittertime)
 
 class Pipeline(object):
     """ A labelers pipeline for processing labels
