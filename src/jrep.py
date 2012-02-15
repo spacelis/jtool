@@ -224,7 +224,7 @@ class DataPrinter(object):
     """ A printing object
     """
     def __init__(self, fout, extractors, iscsv=False,
-            is_force_in_oneline=False, nullstr='NULL', delimiter='\n'):
+            is_force_in_oneline=False, nullstr='NULL', delimiter='\n', numprint=-1):
         super(DataPrinter, self).__init__()
         self.extractors = extractors
         self.iscsv = iscsv
@@ -232,6 +232,7 @@ class DataPrinter(object):
         self.nullstr = nullstr
         self.fout = fout
         self.delimiter = delimiter
+        self.numprint = numprint
         if self.iscsv:
             if len(extractors) > 0:
                 if is_force_in_oneline:
@@ -261,6 +262,9 @@ class DataPrinter(object):
             except KeyError:
                 output.append((elem.path, unicode(self.nullstr)))
         print >> self.fout, (json.dumps(dict(output)).encode('utf-8', errors='ignore'))
+        self.numprint -= 1
+        if self.numprint == 0:
+            return
 
     def print_csv(self, obj):
         """ Print obj with respect to extractors
@@ -274,6 +278,9 @@ class DataPrinter(object):
                 output.append(unicode(self.nullstr))
         print >> self.fout, (self.delimiter.join(output)).\
             encode('utf-8', errors='ignore')
+        self.numprint -= 1
+        if self.numprint == 0:
+            return
 
     def print_csv_oneline(self, obj):
         """ Print obj with respect to extractors and in one line
@@ -287,22 +294,34 @@ class DataPrinter(object):
                 output.append(unicode(self.nullstr))
         print >> self.fout, (self.delimiter.join(output).replace('\n','')).\
             encode('utf-8', errors='ignore')
+        self.numprint -= 1
+        if self.numprint == 0:
+            return
 
     def printall_json(self, jobj):
         """ Print the entire json
         """
         print >> self.fout, json.dumps(jobj).encode('utf-8', errors='ignore')
+        self.numprint -= 1
+        if self.numprint == 0:
+            return
 
     def printall_csv(self, obj):
         """ Print the entire obj
         """
         print >> self.fout, self.delimiter.join(obj).encode('utf-8', errors='ignore')
+        self.numprint -= 1
+        if self.numprint == 0:
+            return
 
     def printall_csv_oneline(self, obj):
         """ Print the entire obj in one line
         """
         print >> self.fout, (self.delimiter.join(obj).replace('\n','')).\
             encode('utf-8', errors='ignore')
+        self.numprint -= 1
+        if self.numprint == 0:
+            return
 
 def parse_parameter():
     """ Parse the argument
@@ -319,14 +338,16 @@ def parse_parameter():
     parser.add_argument('-x', '--exclude', dest='exclude', action='append', metavar='COND', default=list(),
             help='Only list JSON that doesn\'t has EXCLUDE as a member, or/and '
             'the member {==|>=|<=|<<} a given value. E.g. -x"user.id==123"')
-    parser.add_argument('-o', '--output', dest='output', action='store', metavar='file',
+    parser.add_argument('-o', '--output', dest='output', action='store', metavar='FILE',
             default=None, help='The output file, gzipped if the name ends with .gz')
-    parser.add_argument('-J', '--outjson', dest='outjson', action='store_true',
+    parser.add_argument('-j', '--outjson', dest='outjson', action='store_true',
             default=False, help='Output each element in json format.')
-    parser.add_argument('-C', '--incsv', dest='incsv', action='store_true', default=False,
+    parser.add_argument('-c', '--incsv', dest='incsv', action='store_true', default=False,
             help='Use CSV file as input and output format.')
-    parser.add_argument('-n', '--num', dest='num', action='store', type=int,
-            default=-1, help='Output only the first NUM JSON objects.')
+    parser.add_argument('-n', '--numread', dest='numread', action='store', type=int,
+            default=-1, help='Only process NUM JSON objects from input.')
+    parser.add_argument('-N', '--numprint', dest='numprint', action='store', type=int,
+            default=-1, help='Only output NUM JSON objects meet the conditions.')
     parser.add_argument('--delimiter', dest='delimiter', action='store',
             default='\t', help='The object delimiter used in csv format.')
     parser.add_argument('--check', dest='check', action='store_true',
@@ -339,7 +360,7 @@ def parse_parameter():
             'or not found.')
     parser.add_argument('--debug', dest='debug', action='store_true', default=False,
             help='Run jrep in debug mode')
-    parser.add_argument('sources', metavar='file', nargs='*',
+    parser.add_argument('sources', metavar='FILE', nargs='*',
             help='Input files. Those end with .gz will be open as GZIP files.')
     args = parser.parse_args()
     if len(args.sources) > 0:
@@ -356,25 +377,25 @@ def parse_parameter():
         args.fout = sys.stdout
     return args
 
-def json_check(fin, num):
+def json_check(fin, numread):
     """ Check the integrity of the JSONs in the files
     """
-    cnt = 0
-    if num >= 0:
+    cur_line = 0
+    if numread >= 0:
         for line in fin:
             try:
                 obj = json.loads(line)
             except ValueError as ve:
-                logging.warn(ve + '\nAt %s[%d], %s' % (fin.get_current(), cnt, line.strip()))
+                logging.warn('%s[%d] %s' % (fin.get_current(), cur_line, ve))
     else:
         for line in fin:
-            cnt += 1
-            if cnt > num:
+            cur_line += 1
+            if cur_line > numread:
                 break
             try:
                 obj = json.loads(line)
             except ValueError as ve:
-                logging.warn(ve + '\nAt %s[%d], %s' % (fin.get_current(), cnt, line.strip()))
+                logging.warn('%s[%d] %s' % (fin.get_current(), cur_line, ve))
 
 def main():
     """ Main function of this tool which deals with parameter mapping.
@@ -397,14 +418,14 @@ def main():
         extractors.append(Extractor(elem))
 
     dataprinter = DataPrinter(args.fout, extractors, not args.outjson,
-                            args.oneline, args.nullstr, args.delimiter)
+                            args.oneline, args.nullstr, args.delimiter, args.numprint)
 
     if not args.check:
-        cnt = 0
+        cur_line = 0
         if not args.incsv:
             for line in args.fin:
-                cnt += 1
-                if args.num >= 0 and cnt > args.num:
+                cur_line += 1
+                if args.numread >= 0 and cur_line > args.numread:
                     break
                 try:
                     obj = json.loads(line)
@@ -415,11 +436,11 @@ def main():
                 except GotoNextLineException:
                     pass
                 except ValueError as ve:
-                    logging.warn(ve + '\nAt %s[%d], %s' % (args.fin.get_current(), cnt, line.strip()))
+                    logging.warn('%s[%d] %s' % (args.fin.get_current(), cur_line, ve))
         else:
             for line in args.fin:
-                cnt += 1
-                if args.num >= 0 and cnt > args.num:
+                cur_line += 1
+                if args.numread >= 0 and cur_line > args.numread:
                     break
                 try:
                     obj = line.strip().split(args.delimiter)
@@ -430,9 +451,9 @@ def main():
                 except GotoNextLineException:
                     pass
                 except ValueError as ve:
-                    logging.warn(ve + '\nAt %s[%d], %s' % (args.fin.get_current(), cnt, line.strip()))
+                    logging.warn('%s[%d] %s' % (args.fin.get_current(), cur_line, ve))
     else:
-        json_check(args.fin, args.num)
+        json_check(args.fin, args.numread)
 
 
 if __name__ == '__main__':
