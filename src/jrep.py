@@ -4,6 +4,7 @@
 Description:
     A tool for manipulating JSON file
 History:
+    0.2.6 x bug fixed by warning use of combination of JSON input format and CSV outputing all elements
     0.2.5 x performance boosting and rearrange console parameters
     0.2.4 + processing CSV format as input
     0.2.3 x fix a bug of outputing jsons, fix a bug of outputing degug info
@@ -223,32 +224,45 @@ class GotoNextLineException(BaseException):
 class DataPrinter(object):
     """ A printing object
     """
-    def __init__(self, fout, extractors, iscsv=False,
-            is_force_in_oneline=False, nullstr='NULL', delimiter='\n', numprint=-1):
+    def __init__(self, fout, extractors, args):
         super(DataPrinter, self).__init__()
         self.extractors = extractors
-        self.iscsv = iscsv
-        self.is_force_in_oneline = is_force_in_oneline
-        self.nullstr = nullstr
-        self.fout = fout
-        self.delimiter = delimiter
-        self.numprint = numprint
-        if self.iscsv:
-            if len(extractors) > 0:
-                if is_force_in_oneline:
-                    self.prints = self.print_csv_oneline
-                else:
-                    self.prints = self.print_csv
-            else:
-                if is_force_in_oneline:
-                    self.prints = self.printall_csv_oneline
-                else:
-                    self.prints = self.printall_csv
-        else:
+        self.nullstr = args.nullstr
+        self.fout = args.fout
+        self.delimiter = args.delimiter
+        self.numprint = args.numprint
+
+        if args.outjson and not args.incsv:
+            # IN: JSON OUT: JSON
             if len(extractors) > 0:
                 self.prints = self.print_json
             else:
                 self.prints = self.printall_json
+        elif args.incsv and not args.outjson:
+            # IN: CSV OUT: CSV
+            if len(extractors) > 0:
+                if args.oneline:
+                    self.prints = self.print_csv_oneline
+                else:
+                    self.prints = self.print_csv
+            else:
+                if args.oneline:
+                    self.prints = self.printall_csv_oneline
+                else:
+                    self.prints = self.printall_csv
+        elif not args.incsv and not args.outjson:
+            # IN: JSON OUT: CSV
+            if len(extractors) > 0:
+                if args.oneline:
+                    self.prints = self.print_csv_oneline
+                else:
+                    self.prints = self.print_csv
+            else:
+                logging.warn('Output is automatically changed to JSON format')
+                self.prints = self.printall_json
+        else:
+            logging.error('Input as CSV format and output as JSON format is not supported')
+            exit(1)
 
 
     def print_json(self, jobj):
@@ -401,7 +415,7 @@ def main():
     """ Main function of this tool which deals with parameter mapping.
     """
     args = parse_parameter()
-    logging.basicConfig(format='%(message)s', level=logging.DEBUG if args.debug else logging.WARNING)
+    logging.basicConfig(format='[%(levelname)s] %(message)s', level=logging.DEBUG if args.debug else logging.WARNING)
     logging.debug('Version=' + __version__)
     logging.debug(args)
 
@@ -417,8 +431,7 @@ def main():
     for elem in args.fields:
         extractors.append(Extractor(elem))
 
-    dataprinter = DataPrinter(args.fout, extractors, not args.outjson,
-                            args.oneline, args.nullstr, args.delimiter, args.numprint)
+    dataprinter = DataPrinter(args.fout, extractors, args)
 
     if not args.check:
         cur_line = 0
@@ -435,7 +448,8 @@ def main():
                     dataprinter.prints(obj)
                 except GotoNextLineException:
                     pass
-                except ValueError as ve:
+                except (ValueError, TypeError) as ve:
+                    logging.warn('Input format mismatch or field not found')
                     logging.warn('%s[%d] %s' % (args.fin.get_current(), cur_line, ve))
         else:
             for line in args.fin:
@@ -450,7 +464,8 @@ def main():
                     dataprinter.prints(obj)
                 except GotoNextLineException:
                     pass
-                except ValueError as ve:
+                except (ValueError, TypeError) as ve:
+                    logging.warn('Input format mismatch or field not found')
                     logging.warn('%s[%d] %s' % (args.fin.get_current(), cur_line, ve))
     else:
         json_check(args.fin, args.numread)
