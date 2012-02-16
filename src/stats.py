@@ -2,8 +2,9 @@
 # -*- coding: utf-8 -*-
 """File: stats.py
 Description:
-    Get statistics from input.
+    Get statistics of tokens from input, i.e. the number of occurrences.
 History:
+    0.2.1 x move converters out and introducing fields combination
     0.2.0 + Ability of converting a field of an item before statistics
     0.1.1 + Sorting option for outputs.
     0.1.0 The first version.
@@ -16,7 +17,6 @@ import sys
 import logging
 import json
 from fileset import FileInputSet
-
 
 def discrete_statistics(instream, args):
     """ Do statistics on a searious dicrete tokens
