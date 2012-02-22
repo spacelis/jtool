@@ -1,4 +1,4 @@
-#!python
+#!/home/wenli/devel/python/python
 # -*- coding: utf-8 -*-
 """File: gmap.py
 Description:
@@ -101,6 +101,8 @@ class GMMarker(GMOverlay):
         super(GMMarker, self).__init__()
         if len(args) >= 2:
             self.position = GMLatLng(args[0], args[1])
+        elif len(args) >=1:
+            self.position = args[0]
         elif 'lat' in kargs and 'lng' in kargs:
             self.position = GMLatLng(kargs['lat'], kargs['lng'])
         elif 'position' in kargs:
@@ -154,6 +156,28 @@ class GMPolyline(GMOverlay):
         js = 'new google.maps.Polyline(%s)' % (GMObject.js_helper(self.options),)
         return js
 
+class GMPolylineWithMarkers(GMPolyline):
+    """ A combined version of polylines and markers
+    """
+    def __init__(self, **kargs):
+        super(GMPolylineWithMarkers, self).__init__(**kargs)
+        self.markerss = list()
+
+    def add_point(self, latlng):
+        """ add a new point for this polyline with a marker
+        """
+        super(GMPolylineWithMarkers, self).add_point(latlng)
+        self.markers.append(GMMarker(latlng))
+
+    def js_code(self):
+        """ Generate Javascript code for this object
+        """
+        js = super(GMPolylineWithMarkers, self).js_code() + '\n'
+        js += '\n'.join([v.js_code() for v in self.markers]) + '\n'
+        return js
+
+
+
 class GMap(GMObject):
     """ A class representing Google map
     """
@@ -199,13 +223,34 @@ class GMap(GMObject):
             fout = open(fout, 'w')
         print >> fout, self.html_code(),
 
+def console():
+    """ Draw maps with input data from console
+    """
+    parser = argparse.ArgumentParser(description='Draw markers or Polylines on Google Maps',
+            epilog='NOTE: Default drawing type is markers.')
+    parser.add_argument('-p', '--polyline', dest='polyline', action='store_true', default=False,
+            help='Draw polylines.')
+    parser.add_argument('-o', '--output', dest='output', action='store', metavar='FILE', default=None,
+            help='The output html filename.')
+    parser.add_argument('sources', metavar='FILE', nargs='*',
+            help='Input files. Those end with .gz will be open as GZIP files.')
+    args = parser.parse_args()
+    if len(args.sources) > 0:
+        args.fin = FileInputSet(args.sources)
+    else:
+        args.fin = sys.stdin
 
+    if args.output:
+        args.fout = open(args.output, 'w')
+    else:
+        logging.error('No output file specified')
+        exit(1)
 
 def test():
     """docstring for test
     """
     g = GMap()
-    p = GMPolyline()
+    p = GMPolylineWithMarkers()
     p.add_point(GMLatLng(52.009824, 4.361659))
     p.add_point(GMLatLng(51.009824, 4.361659))
     g.add_overlay(p)
